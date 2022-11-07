@@ -5,6 +5,7 @@ from tqdm import tqdm
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
+import pandas as pd
 
 def transform_name(product_name):
     # IMPLEMENT
@@ -36,6 +37,22 @@ min_products = args.min_products
 names_as_labels = False
 if args.label == 'name':
     names_as_labels = True
+
+
+def split_cols(val):
+    split_val = val.split(' ')
+    label = split_val[0]
+    name = ' '.join(split_val[1:])
+    return label, name
+
+
+labeled_products = pd.read_csv('/workspace/datasets/fasttext/labeled_products.txt', sep='\t', header=None)
+labeled_products['label'], labeled_products['name'] = zip(*labeled_products[0].apply(split_cols))
+label_counts = labeled_products['label'].value_counts()
+above_min = labeled_products['label'].apply(lambda label: label_counts.loc[label] > min_products)
+pruned_labels = labeled_products[above_min]
+pruned_labels[['label', 'name']].to_csv('/workspace/datasets/fasttext/pruned_labeled_products.txt', header=False, index=False, sep=' ')
+
 
 def _label_filename(filename):
     tree = ET.parse(filename)
