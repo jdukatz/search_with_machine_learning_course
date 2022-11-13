@@ -47,11 +47,61 @@ parents_df = pd.DataFrame(list(zip(categories, parents)), columns =['category', 
 # Read the training data into pandas, only keeping queries with non-root categories in our category tree.
 queries_df = pd.read_csv(queries_file_name)[['category', 'query']]
 queries_df = queries_df[queries_df['category'].isin(categories)]
+# queries_df = queries_df.head(1000)  # FOR TESTING ONLY
 
 # IMPLEMENT ME: Convert queries to lowercase, and optionally implement other normalization, like stemming.
+queries_df['query'] = queries_df['query'].str.lower()
+queries_df['query'] = queries_df['query'].str.replace(r'[^a-zA-Z0-9]+', ' ')
+queries_df['query'] = queries_df['query'].str.replace(r' +', ' ')
+queries_df['query'] = queries_df['query'].apply(lambda x: ' '.join(stemmer.stem(w) for w in x.split()))
+# print("ORIGINAL QUERIES DF")
+# print(queries_df)
+# print("GETTING VALUE COUNTS")
+query_counts = queries_df['category'].value_counts()
+# print("QUERY COUNTS")
+# print(query_counts)
 
 # IMPLEMENT ME: Roll up categories to ancestors to satisfy the minimum number of queries per category.
+# print("GETTING CATEGORIES BELOW THRESHOLD")
+categories_below_threshold = query_counts[query_counts < min_queries]
+# print("CATEGORIES BELOW QUERIES")
+# print(categories_below_threshold)
+# print(categories_below_threshold.index)
+# print("PARENTS DF")
+# print(parents_df)
+print(f'{len(categories_below_threshold)} categories with query counts below threshold')
 
+while len(categories_below_threshold) > 0:
+    # get parents of categories below threshold
+    parents = parents_df[parents_df['category'].isin(categories_below_threshold.index)].set_index('category')
+    # print("PARENTS")
+    # print(parents)
+    # replace categories in queries_df with parents
+    # print("QUERIES")
+    # print(queries_df)
+    def parent_lookup(cat):
+        try:
+            parent_value = parents.loc[cat][0]
+            # print(f"FOUND PARENT OF {cat}: {parent_value}")
+        except KeyError:
+            return cat
+    queries_df['category'] = queries_df['category'].apply(parent_lookup)
+    # queries_df = queries_df.join(parents, on='category', how='left', rsuffix='rollup_cat')
+    # print("JOINED QUERY DF")
+    # print(queries_df)
+
+    # get queries below thresholds again
+    # print("GETTING VALUE COUNTS")
+    query_counts = queries_df['category'].value_counts()
+    # print("GETTING CATEGORIES BELOW THRESHOLD")
+    categories_below_threshold = query_counts[query_counts < min_queries]
+    print(f'{len(categories_below_threshold)} categories with query counts below threshold')
+
+# print("FINAL QUERIES DF")
+# print(queries_df)
+# print("QUERY COUNTS")
+print("Final unique categories by query count")
+print(queries_df['category'].value_counts())
 # Create labels in fastText format.
 queries_df['label'] = '__label__' + queries_df['category']
 
