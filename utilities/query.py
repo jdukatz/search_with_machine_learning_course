@@ -12,11 +12,15 @@ import pandas as pd
 import sys
 import logging
 import fasttext
+from sentence_transformers import SentenceTransformer
 
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logging.basicConfig(format='%(levelname)s:%(message)s')
+
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # expects clicks and impressions to be in the row
 def create_prior_queries_from_group(
@@ -193,7 +197,22 @@ def create_query(user_query, click_prior_query, filters, sort="_score", sortDir=
     return query_obj
 
 
-def search(client, user_query, index="bbuy_products", sort="_score", sortDir="desc", synonyms=False, min_confidence=0.5):
+def create_vector_query(query, num_results=10):
+    embedded_query = model.encode([query])
+    return {
+        "size": num_results,
+        "query": {
+            "knn": {
+                "embedding": {
+                    "vector": embedded_query[0],
+                    "k": num_results
+                }
+            }
+        }
+    }
+
+
+def search(client, user_query, index="bbuy_products", sort="_score", sortDir="desc", synonyms=False, min_confidence=0.5, vector_search=False):
     #### W3: classify the query
     model = fasttext.load_model('query_model.bin')
     categories = model.predict(user_query)
@@ -211,7 +230,10 @@ def search(client, user_query, index="bbuy_products", sort="_score", sortDir="de
             }
         ]
     # Note: you may also want to modify the `create_query` method above
-    query_obj = create_query(user_query, click_prior_query=None, filters=filters, sort=sort, sortDir=sortDir, source=["name", "shortDescription"], synonyms=synonyms)
+    if vector_search:
+        query_obj = create_vector_query(user_query, 10)
+    else:
+        query_obj = create_query(user_query, click_prior_query=None, filters=filters, sort=sort, sortDir=sortDir, source=["name", "shortDescription"], synonyms=synonyms)
     logging.info(query_obj)
     response = client.search(query_obj, index=index)
     if response and response['hits']['hits'] and len(response['hits']['hits']) > 0:
@@ -233,8 +255,9 @@ if __name__ == "__main__":
                          help='The OpenSearch port')
     general.add_argument('--user',
                          help='The OpenSearch admin.  If this is set, the program will prompt for password too. If not set, use default of admin/admin')
-    parser.add_argument('--synonyms', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--synonyms', action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument('--min_confidence', type=float, default=0.5, help='Minimum confidence for the classifier to apply a filter')
+    parser.add_argument('--vector', action=argparse.BooleanOptionalAction, default=False, help='Use knn vector search instead of traditional')
 
     args = parser.parse_args()
 
@@ -269,7 +292,7 @@ if __name__ == "__main__":
         query = line.rstrip()
         if query == "Exit":
             break
-        search(client=opensearch, user_query=query, index=index_name, synonyms=synonyms, min_confidence=args.min_confidence)
+        search(client=opensearch, user_query=query, index=index_name, synonyms=synonyms, min_confidence=args.min_confidence, vector_search=args.vector)
 
         print(query_prompt)
 
